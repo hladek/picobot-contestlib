@@ -37,7 +37,7 @@ Optionally the robot reports its status to an external HTTPS server at a configu
 The application runs entirely on the Pico W under **MicroPython**.  
 When powered on it:
 
-1. Creates a Wi-Fi access point named **`picobot-web`** with password **`12345678`**.
+1. Creates a Wi-Fi access point (or connects to one in STA mode) using the SSID and password set in `picobot_config.py`.
 2. Opens an HTTP server on port **80** at IP **`192.168.4.1`**.
 3. Serves a touch-optimised control page to any browser on the same Wi-Fi network.
 4. *(Optional)* Periodically POSTs the board status to a remote HTTPS server and reads back a single integer that controls competition state flags.
@@ -71,6 +71,15 @@ All settings live in **`PicoBot/picobot_config.py`**. Edit this file before uplo
 ```python
 # PicoBot reporting configuration
 
+# Wi-Fi mode: 'AP' to create an access point, 'STA' to join an existing network
+WIFI_MODE = 'AP'
+
+# Wi-Fi network name (SSID) — used as AP name in AP mode, target network in STA mode
+WIFI_SSID = 'picobot-web'
+
+# Wi-Fi password
+WIFI_PASSWORD = '12345678'
+
 # Enable HTTPS POST status reporting to the server
 SERVER_ENABLE = True
 
@@ -91,22 +100,14 @@ REPORT_AUTH = None
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `WIFI_MODE` | `str` | `'AP'` | `'AP'` — Pico W creates its own access point. `'STA'` — Pico W connects to an existing Wi-Fi network. |
+| `WIFI_SSID` | `str` | `'picobot-web'` | Network name. In AP mode this is the name of the hotspot; in STA mode this is the network to join. |
+| `WIFI_PASSWORD` | `str` | `'12345678'` | Password for the Wi-Fi network. |
 | `SERVER_ENABLE` | `bool` | `True` | Enable/disable HTTPS status reporting entirely. When `False` the server status bar is also hidden from the web UI. |
 | `SERVER_BRAKE` | `bool` | `False` | When `True`, all motor and arm commands are blocked until the server signals that the competition is running (bit 1 of `server_command`). The web UI shows a lock overlay. |
 | `REPORT_URL` | `str` | — | Full HTTPS URL that receives the POST request. Must use `https://`. |
 | `REPORT_DELAY` | `int` | `10` | Seconds between successive POST requests. |
-| `REPORT_AUTH` | `str\|None` | `None` | If set, the value is sent as a **Bearer token** in the `Authorization` header: `Authorization: Bearer <value>`. Set to `None` to send unauthenticated requests. |
-
-### Wi-Fi credentials
-
-The AP SSID and password are set directly in `picobot_main.py`:
-
-```python
-ssid     = 'picobot-web'
-password = '12345678'
-```
-
-Change these values before uploading if you want a different network name or password.
+| `REPORT_AUTH` | `str\|None` | `None` | If set, sent as a Bearer token in the `Authorization` header. Set to `None` to send unauthenticated requests. |
 
 ---
 
@@ -173,8 +174,8 @@ mpremote reset
 
 1. Power on the robot. The onboard LED on the Pico W turns **on** when the access point is ready (usually within 5 seconds).
 2. On your phone, go to **Settings → Wi-Fi** and connect to:
-   - **Network:** `picobot-web`
-   - **Password:** `12345678`
+   - **Network:** `WIFI_SSID` value from `picobot_config.py` (default: `picobot-web`)
+   - **Password:** `WIFI_PASSWORD` value from `picobot_config.py` (default: `12345678`)
 3. Open a browser and navigate to **`http://192.168.4.1`**.
 
 > **Note:** Your phone may warn that the network has no internet access. Tap **"Stay connected"** or **"Use this network anyway"** to keep the connection.

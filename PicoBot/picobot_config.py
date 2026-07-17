@@ -1,5 +1,14 @@
 # PicoBot reporting configuration
 
+# Wi-Fi mode: 'AP' to create an access point, 'STA' to join an existing network
+WIFI_MODE = 'AP'
+
+# Wi-Fi network name (SSID) — used as AP name in AP mode, target network in STA mode
+WIFI_SSID = 'picobot-web'
+
+# Wi-Fi password
+WIFI_PASSWORD = '12345678'
+
 # Enable HTTPS POST status reporting to the server
 SERVER_ENABLE = True
 

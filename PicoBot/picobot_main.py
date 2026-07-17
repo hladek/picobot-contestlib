@@ -17,7 +17,7 @@ import ubinascii
 import urequests
 import ujson
 from picobot import PicoBot
-from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE, REPORT_AUTH
+from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE, REPORT_AUTH, WIFI_SSID, WIFI_PASSWORD, WIFI_MODE
 import rp2
 
 
@@ -47,15 +47,6 @@ robot = PicoBot()
 rp2.country('BG')
 
 
-##ssid = 'smart_home'
-##password = 'Stem123*'
-# Load login data from different file for safety reasons
-#ssid = secrets['ssid']
-#password = secrets['pw']
-ssid = 'picobot-web'
-password = '12345678'
-
-# Got IP 10.11.12.242
 
 def move_left_forward():
     print ("Left Forward")
@@ -127,7 +118,7 @@ def connect():
     # print(wlan.config('channel'))
     # print(wlan.config('essid'))
     # print(wlan.config('txpower'))
-    wlan.connect(ssid, password)
+    wlan.connect(WIFI_SSID, WIFI_PASSWORD)
     while wlan.isconnected() == False:
         print('Waiting for connection...')
         sleep(1)
@@ -139,7 +130,7 @@ def connect():
 
 def create_WiFi_AP():
     ap = network.WLAN(network.AP_IF)
-    ap.config(essid=ssid, password=password) 
+    ap.config(essid=WIFI_SSID, password=WIFI_PASSWORD)
     ap.active(True)
 
     while ap.active == False:
@@ -446,10 +437,10 @@ def serve(connection):
 
 
 try:
-    # For STA mode
-    #ip = connect()
-    # For AP mode
-    ip = create_WiFi_AP()
+    if WIFI_MODE == 'STA':
+        ip = connect()
+    else:
+        ip = create_WiFi_AP()
     connection = open_socket(ip)
     print(f'Reporting status to {REPORT_URL} every {REPORT_DELAY}s')
     serve(connection)
