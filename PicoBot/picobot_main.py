@@ -11,16 +11,34 @@ Use https://jsfiddle.net/ to create the WEB page
 import network
 import socket
 from time import sleep
+import time
 import machine
-#from secrets import secrets
 import ubinascii
+import urequests
+import ujson
 from picobot import PicoBot
+from picobot_config import REPORT_URL, REPORT_DELAY
 import rp2
 
 
 # Define led object and set LED pin to OUT
 led = machine.Pin('LED', machine.Pin.OUT)
 led.off()
+
+# Global variable storing the last integer command received from the reporting server
+server_command = 0
+
+# True after at least one successful POST to the reporting server
+server_online = False
+
+# True when bit 0 of server_command is set
+server_competition_ready = False
+
+# True when bit 1 of server_command is set
+server_competition_running = False
+
+# Wireless adapter MAC address (resolved once at startup)
+wlan_mac = ubinascii.hexlify(network.WLAN(network.AP_IF).config('mac'), ':').decode()
 
 # Create robot object
 robot = PicoBot()
@@ -388,51 +406,88 @@ def process_request(request):
     elif '/rotate_right?' in request:
         rotate_right()
 
+def get_board_status():
+    """Return a dict with the current board state."""
+    return {
+        'mac':        wlan_mac,
+        'servo_base': robot.arm.current_angles.get(0, 90),
+        'servo_arm':  robot.arm.current_angles.get(1, 90),
+        'servo_claw': robot.arm.current_angles.get(2, 90),
+        'uptime_ms':  time.ticks_ms(),
+    }
+
+def send_status():
+    """POST board status to the reporting server over HTTPS.
+    Stores the integer returned by the server in the global server_command.
+    Sets server_online to True on success, False on failure."""
+    global server_command, server_online, server_competition_ready, server_competition_running
+    try:
+        status = get_board_status()
+        response = urequests.post(
+            REPORT_URL,
+            headers={'Content-Type': 'application/json'},
+            data=ujson.dumps(status),
+        )
+        server_command = int(response.text.strip())
+        response.close()
+        server_online = True
+        server_competition_ready   = bool(server_command & 0x01)
+        server_competition_running = bool(server_command & 0x02)
+        print('server_command:', server_command, 'competition_ready:', server_competition_ready, 'competition_running:', server_competition_running)
+    except Exception as e:
+        server_online = False
+        print('Status report error:', e)
+
+
 def serve(connection):
     #Start web server with better error handling
+    connection.settimeout(1)  # non-blocking accept; allows periodic status sends
+    last_report = time.ticks_ms()
+
     while True:
+        # Periodic HTTPS status report
+        if time.ticks_diff(time.ticks_ms(), last_report) >= REPORT_DELAY * 1000:
+            send_status()
+            last_report = time.ticks_ms()
+
         try:
             client, addr = connection.accept()
-            print('Client connected from', addr)
+        except OSError:
+            # Timeout on accept — no client yet, loop back to check timer
+            continue
+
+        print('Client connected from', addr)
+        try:
+            request = client.recv(1024)
+            request = str(request)
+            print('Request:', request)
             
             try:
-                request = client.recv(1024)
-                request = str(request)
-                print('Request:', request)
-                
-                try:
-                    request_path = request.split()[1]
-                except IndexError:
-                    request_path = '/'
-                
-                # Process the request FIRST, then send the HTML response
-                process_request(request_path)
-                
-                # Send HTML response after processing the command
-                html = webpage()
-                response = 'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n' + html
-                client.send(response)
-                
-            except Exception as e:
-                print('Error handling request:', e)
-                # Send error response
-                try:
-                    client.send('HTTP/1.0 500 Internal Server Error\r\nContent-type: text/plain\r\n\r\nServer Error')
-                except:
-                    pass
-                    
-            finally:
-                # Always close the client connection
-                try:
-                    client.close()
-                except:
-                    pass
-                print('Client disconnected')
-                
+                request_path = request.split()[1]
+            except IndexError:
+                request_path = '/'
+            
+            # Process the request FIRST, then send the HTML response
+            process_request(request_path)
+            
+            # Send HTML response after processing the command
+            html = webpage()
+            response = 'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n' + html
+            client.send(response)
+            
         except Exception as e:
-            print('Server error:', e)
-            # Small delay before accepting next connection to prevent tight loop on errors
-            sleep(0.1)
+            print('Error handling request:', e)
+            try:
+                client.send('HTTP/1.0 500 Internal Server Error\r\nContent-type: text/plain\r\n\r\nServer Error')
+            except:
+                pass
+                
+        finally:
+            try:
+                client.close()
+            except:
+                pass
+            print('Client disconnected')
 
 
 try:
@@ -441,6 +496,7 @@ try:
     # For AP mode
     ip = create_WiFi_AP()
     connection = open_socket(ip)
+    print(f'Reporting status to {REPORT_URL} every {REPORT_DELAY}s')
     serve(connection)
 except KeyboardInterrupt:
     machine.reset()
