@@ -188,172 +188,62 @@ def webpage():
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>PicoBot Control</title>
 <style>
-* { box-sizing: border-box; }
-body { 
-    font-family: Arial, sans-serif; 
-    text-align: center; 
-    background: #f4f4f9;
-    margin: 0;
-    padding: 10px;
-    touch-action: manipulation;
-}
-h1 { font-size: 2.2em; margin: 15px 0; }
-h3 { font-size: 1.8em; margin: 20px 0 10px 0; }
-
-.control-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 10px;
-}
-
-.control-btn {
-    height: 100px;
-    width: 100%;
-    font-size: 1.4em;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 15px;
-    cursor: pointer;
-    touch-action: manipulation;
-    padding: 10px;
-    margin: 0;
-}
-.control-btn:active { background: #0056b3; }
-
-.stop-btn { background: #dc3545; }
-.stop-btn:active { background: #c82333; }
-
-.slider-container {
-    margin: 20px auto;
-    padding: 15px;
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    max-width: 500px;
-}
-
-.slider-label {
-    font-size: 1.4em;
-    font-weight: bold;
-    margin-bottom: 15px;
-    display: block;
-}
-
-.slider {
-    width: 100%;
-    height: 50px;
-    margin: 15px 0;
-}
-
-.slider-value {
-    font-size: 1.4em;
-    font-weight: bold;
-    margin-top: 10px;
-    display: inline-block;
-    min-width: 50px;
-}
-
-.status-bar {
-    display: flex;
-    justify-content: center;
-    gap: 24px;
-    flex-wrap: wrap;
-    background: #fff;
-    border-radius: 12px;
-    padding: 10px 20px;
-    margin: 10px auto;
-    max-width: 800px;
-    font-size: 1.2em;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.controls-wrap {
-    position: relative;
-}
-
-.controls-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(200,200,200,0.6);
-    border-radius: 15px;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.6em;
-    font-weight: bold;
-    color: #555;
-    pointer-events: all;
-}
-
-#reset {
-    background: #ff5733;
-    height: 70px;
-    width: 200px;
-    font-size: 1.4em;
-    border-radius: 15px;
-    margin: 20px auto;
-}
-#reset:active { background: #c70039; }
-
-@media (max-width: 600px) {
-    .control-btn { height: 90px; font-size: 1.2em; }
-    h1 { font-size: 1.8em; }
-    h3 { font-size: 1.5em; }
-}
+*{{box-sizing:border-box}}
+body{{font-family:Arial,sans-serif;text-align:center;background:#f0f2f5;margin:0;padding:6px;touch-action:manipulation}}
+h1{{font-size:1.6em;margin:8px 0}}
+h3{{font-size:1.1em;margin:8px 0 4px}}
+.status-bar{{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;background:#fff;border-radius:8px;padding:5px 12px;margin:5px auto;max-width:600px;font-size:0.95em;box-shadow:0 1px 4px rgba(0,0,0,0.1)}}
+.control-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:480px;margin:0 auto;padding:4px}}
+.control-btn{{height:70px;width:100%;font-size:1.1em;background:#007bff;color:#fff;border:none;border-radius:10px;cursor:pointer;touch-action:manipulation;padding:4px}}
+.control-btn:active{{background:#0056b3}}
+.stop-btn{{background:#dc3545}}
+.stop-btn:active{{background:#c82333}}
+.arm-grid{{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 8px;max-width:480px;margin:0 auto;padding:6px 10px;background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.1)}}
+.arm-label{{font-size:1em;font-weight:bold;text-align:right}}
+.slider{{width:100%;height:36px;margin:0}}
+.slider-value{{font-size:1em;font-weight:bold;min-width:38px;text-align:left}}
+.controls-wrap{{position:relative}}
+.controls-overlay{{position:absolute;inset:0;background:rgba(200,200,200,0.65);border-radius:10px;z-index:10;display:flex;align-items:center;justify-content:center;font-size:1.3em;font-weight:bold;color:#555;pointer-events:all}}
+#reset{{background:#ff5733;height:46px;width:160px;font-size:1.1em;border:none;border-radius:10px;margin:8px auto;cursor:pointer;color:#fff;display:block}}
+#reset:active{{background:#c70039}}
+@media(max-width:400px){{.control-btn{{height:60px;font-size:1em}}h1{{font-size:1.3em}}}}
 </style>
 </head>
 <body>
 <h1>🤖 PicoBot Control</h1>
 """ + status_bar + """
-
 <div class="controls-wrap">
 <div class="controls-overlay" style="{overlay_style}">🔒 Waiting for competition start</div>
 
 <div class="control-grid">
-    <button class="control-btn" onclick="c('left_forward')" {disabled}>↖️ L-Fwd</button>
-    <button class="control-btn" onclick="c('forward')" {disabled}>⬆️ Forward</button>
-    <button class="control-btn" onclick="c('right_forward')" {disabled}>↗️ R-Fwd</button>
-
-    <button class="control-btn" onclick="c('left')" {disabled}>⬅️ Left</button>
-    <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
-    <button class="control-btn" onclick="c('right')" {disabled}>➡️ Right</button>
-
-    <button class="control-btn" onclick="c('left_back')" {disabled}>↙️ L-Back</button>
-    <button class="control-btn" onclick="c('back')" {disabled}>⬇️ Back</button>
-    <button class="control-btn" onclick="c('right_back')" {disabled}>↘️ R-Back</button>
-
-    <button class="control-btn" onclick="c('rotate_left')" {disabled}>🔄 Rot-L</button>
-    <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
-    <button class="control-btn" onclick="c('rotate_right')" {disabled}>🔃 Rot-R</button>
+  <button class="control-btn" onclick="c('left_forward')" {disabled}>↖️ L-Fwd</button>
+  <button class="control-btn" onclick="c('forward')" {disabled}>⬆️ Fwd</button>
+  <button class="control-btn" onclick="c('right_forward')" {disabled}>↗️ R-Fwd</button>
+  <button class="control-btn" onclick="c('left')" {disabled}>⬅️ Left</button>
+  <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
+  <button class="control-btn" onclick="c('right')" {disabled}>➡️ Right</button>
+  <button class="control-btn" onclick="c('left_back')" {disabled}>↙️ L-Back</button>
+  <button class="control-btn" onclick="c('back')" {disabled}>⬇️ Back</button>
+  <button class="control-btn" onclick="c('right_back')" {disabled}>↘️ R-Back</button>
+  <button class="control-btn" onclick="c('rotate_left')" {disabled}>🔄 Rot-L</button>
+  <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
+  <button class="control-btn" onclick="c('rotate_right')" {disabled}>🔃 Rot-R</button>
 </div>
 
 <h3>🦾 Arm Control</h3>
-
-<div class="slider-container">
-    <span class="slider-label">Base:</span>
-    <input type="range" class="slider" id="base_slider" min="0" max="180" value="90" onchange="s('base',this.value)" {disabled}>
-    <span class="slider-value" id="base_value">90°</span>
-</div>
-
-<div class="slider-container">
-    <span class="slider-label">Arm:</span>
-    <input type="range" class="slider" id="arm_slider" min="40" max="140" value="90" onchange="s('arm',this.value)" {disabled}>
-    <span class="slider-value" id="arm_value">90°</span>
-</div>
-
-<div class="slider-container">
-    <span class="slider-label">Claw:</span>
-    <input type="range" class="slider" id="claw_slider" min="40" max="140" value="90" onchange="s('claw',this.value)" {disabled}>
-    <span class="slider-value" id="claw_value">90°</span>
+<div class="arm-grid">
+  <span class="arm-label">Base</span>
+  <input type="range" class="slider" id="base_slider" min="0" max="180" value="90" onchange="s('base',this.value)" {disabled}>
+  <span class="slider-value" id="base_value">90°</span>
+  <span class="arm-label">Arm</span>
+  <input type="range" class="slider" id="arm_slider" min="40" max="140" value="90" onchange="s('arm',this.value)" {disabled}>
+  <span class="slider-value" id="arm_value">90°</span>
+  <span class="arm-label">Claw</span>
+  <input type="range" class="slider" id="claw_slider" min="40" max="140" value="90" onchange="s('claw',this.value)" {disabled}>
+  <span class="slider-value" id="claw_value">90°</span>
 </div>
 
 <button id="reset" onclick="resetAll()" {disabled}>🔄 Reset All</button>
-
 </div>""".format(overlay_style=overlay_style, disabled=disabled_attr) + """
 <script>
 function c(action) {
