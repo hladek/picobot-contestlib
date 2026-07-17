@@ -56,6 +56,7 @@ def init_db():
             first_seen      TEXT NOT NULL,
             last_seen       TEXT NOT NULL,
             request_count   INTEGER NOT NULL DEFAULT 0,
+            ip              TEXT,
             servo_base      INTEGER,
             servo_arm       INTEGER,
             servo_claw      INTEGER,
@@ -84,6 +85,16 @@ def init_db():
             ended_at   TEXT
         )
     """)
+    db.commit()
+    db.close()
+
+
+def migrate_db():
+    """Apply incremental schema migrations to an existing database."""
+    db = sqlite3.connect(app.config['DATABASE'])
+    existing = {row[1] for row in db.execute("PRAGMA table_info(robots)")}
+    if 'ip' not in existing:
+        db.execute("ALTER TABLE robots ADD COLUMN ip TEXT")
     db.commit()
     db.close()
 
@@ -144,6 +155,7 @@ def receive_status():
     Expected JSON body:
         {
             "mac":        "aa:bb:cc:dd:ee:ff",
+            "ip":         "192.168.4.1",
             "servo_base": 90,
             "servo_arm":  90,
             "servo_claw": 90,
@@ -158,6 +170,7 @@ def receive_status():
 
     mac        = str(data['mac']).lower().strip()
     now        = datetime.now(timezone.utc).isoformat()
+    ip         = str(data['ip']).strip() if data.get('ip') else None
     servo_base = data.get('servo_base')
     servo_arm  = data.get('servo_arm')
     servo_claw = data.get('servo_claw')
@@ -168,16 +181,17 @@ def receive_status():
     db.execute(
         """INSERT INTO robots
                (mac, first_seen, last_seen, request_count,
-                servo_base, servo_arm, servo_claw, uptime_ms, command)
-               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+                ip, servo_base, servo_arm, servo_claw, uptime_ms, command)
+               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(mac) DO UPDATE SET
                last_seen     = excluded.last_seen,
                request_count = request_count + 1,
+               ip            = excluded.ip,
                servo_base    = excluded.servo_base,
                servo_arm     = excluded.servo_arm,
                servo_claw    = excluded.servo_claw,
                uptime_ms     = excluded.uptime_ms""",
-        (mac, now, now, servo_base, servo_arm, servo_claw, uptime_ms,
+        (mac, now, now, ip, servo_base, servo_arm, servo_claw, uptime_ms,
          app.config['DEFAULT_COMMAND']),
     )
 
@@ -362,7 +376,7 @@ DASHBOARD_HTML = (
       <table class="table table-hover table-bordered mb-0 align-middle">
         <thead>
           <tr>
-            <th>MAC Address</th>
+            <th>MAC / IP</th>
             <th>First Seen (UTC)</th>
             <th>Last Seen (UTC)</th>
             <th>Requests</th>
@@ -375,7 +389,7 @@ DASHBOARD_HTML = (
         {% for r in robots %}
           {% set cmd = r.command %}
           <tr>
-            <td><a href="/robot/{{ r.mac }}"><code>{{ r.mac }}</code></a></td>
+            <td><a href="/robot/{{ r.mac }}"><code>{{ r.mac }}</code></a>{% if r.ip %}<br><small class="text-muted">{{ r.ip }}</small>{% endif %}</td>
             <td class="text-nowrap">{{ r.first_seen[:19].replace('T',' ') }}</td>
             <td class="text-nowrap">{{ r.last_seen[:19].replace('T',' ') }}</td>
             <td class="text-center">{{ r.request_count }}</td>
@@ -417,7 +431,7 @@ DETAIL_HTML = (
 <div class="container-fluid px-4">
   <a href="/" class="btn btn-sm btn-outline-secondary mb-3">← Back to Dashboard</a>
 
-  <h4 class="mb-0"><code>{{ robot.mac }}</code></h4>
+  <h4 class="mb-0"><code>{{ robot.mac }}</code>{% if robot.ip %} <small class="text-muted fs-6">{{ robot.ip }}</small>{% endif %}</h4>
   <p class="text-muted small mb-3">
     First seen: {{ robot.first_seen[:19].replace('T',' ') }} UTC
      |  Total requests: <strong>{{ robot.request_count }}</strong>
@@ -615,6 +629,7 @@ COMPETITION_HTML = (
 
 if __name__ == '__main__':
     init_db()
+    migrate_db()
     app.run(
         host=app.config['HOST'],
         port=app.config['PORT'],
