@@ -17,7 +17,7 @@ import ubinascii
 import urequests
 import ujson
 from picobot import PicoBot
-from picobot_config import REPORT_URL, REPORT_DELAY
+from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE
 import rp2
 
 
@@ -163,6 +163,25 @@ def open_socket(ip):
 
 def webpage():
     # Touch-friendly HTML for Samsung S22 Ultra
+    def _badge(flag):
+        return '<span style="color:#28a745;font-weight:bold">YES</span>' if flag else '<span style="color:#dc3545;font-weight:bold">NO</span>'
+
+    controls_locked = SERVER_BRAKE and not server_competition_running
+    disabled_attr   = 'disabled' if controls_locked else ''
+    overlay_style   = 'display:block' if controls_locked else 'display:none'
+
+    status_bar = ''
+    if SERVER_ENABLE:
+        status_bar = """<div class="status-bar">
+  <span>Server online: {online}</span>
+  <span>Competition ready: {ready}</span>
+  <span>Competition running: {running}</span>
+</div>""".format(
+            online=_badge(server_online),
+            ready=_badge(server_competition_ready),
+            running=_badge(server_competition_running),
+        )
+
     html = """<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
@@ -238,6 +257,39 @@ h3 { font-size: 1.8em; margin: 20px 0 10px 0; }
     min-width: 50px;
 }
 
+.status-bar {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    flex-wrap: wrap;
+    background: #fff;
+    border-radius: 12px;
+    padding: 10px 20px;
+    margin: 10px auto;
+    max-width: 800px;
+    font-size: 1.2em;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.controls-wrap {
+    position: relative;
+}
+
+.controls-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(200,200,200,0.6);
+    border-radius: 15px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6em;
+    font-weight: bold;
+    color: #555;
+    pointer-events: all;
+}
+
 #reset {
     background: #ff5733;
     height: 70px;
@@ -257,47 +309,52 @@ h3 { font-size: 1.8em; margin: 20px 0 10px 0; }
 </head>
 <body>
 <h1>🤖 PicoBot Control</h1>
+""" + status_bar + """
+
+<div class="controls-wrap">
+<div class="controls-overlay" style="{overlay_style}">🔒 Waiting for competition start</div>
 
 <div class="control-grid">
-    <button class="control-btn" onclick="c('left_forward')">↖️ L-Fwd</button>
-    <button class="control-btn" onclick="c('forward')">⬆️ Forward</button>
-    <button class="control-btn" onclick="c('right_forward')">↗️ R-Fwd</button>
+    <button class="control-btn" onclick="c('left_forward')" {disabled}>↖️ L-Fwd</button>
+    <button class="control-btn" onclick="c('forward')" {disabled}>⬆️ Forward</button>
+    <button class="control-btn" onclick="c('right_forward')" {disabled}>↗️ R-Fwd</button>
 
-    <button class="control-btn" onclick="c('left')">⬅️ Left</button>
-    <button class="control-btn stop-btn" onclick="c('stop')">⏹️ STOP</button>
-    <button class="control-btn" onclick="c('right')">➡️ Right</button>
+    <button class="control-btn" onclick="c('left')" {disabled}>⬅️ Left</button>
+    <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
+    <button class="control-btn" onclick="c('right')" {disabled}>➡️ Right</button>
 
-    <button class="control-btn" onclick="c('left_back')">↙️ L-Back</button>
-    <button class="control-btn" onclick="c('back')">⬇️ Back</button>
-    <button class="control-btn" onclick="c('right_back')">↘️ R-Back</button>
+    <button class="control-btn" onclick="c('left_back')" {disabled}>↙️ L-Back</button>
+    <button class="control-btn" onclick="c('back')" {disabled}>⬇️ Back</button>
+    <button class="control-btn" onclick="c('right_back')" {disabled}>↘️ R-Back</button>
 
-    <button class="control-btn" onclick="c('rotate_left')">🔄 Rot-L</button>
-    <button class="control-btn stop-btn" onclick="c('stop')">⏹️ STOP</button>
-    <button class="control-btn" onclick="c('rotate_right')">🔃 Rot-R</button>
+    <button class="control-btn" onclick="c('rotate_left')" {disabled}>🔄 Rot-L</button>
+    <button class="control-btn stop-btn" onclick="c('stop')" {disabled}>⏹️ STOP</button>
+    <button class="control-btn" onclick="c('rotate_right')" {disabled}>🔃 Rot-R</button>
 </div>
 
 <h3>🦾 Arm Control</h3>
 
 <div class="slider-container">
     <span class="slider-label">Base:</span>
-    <input type="range" class="slider" id="base_slider" min="0" max="180" value="90" onchange="s('base',this.value)">
+    <input type="range" class="slider" id="base_slider" min="0" max="180" value="90" onchange="s('base',this.value)" {disabled}>
     <span class="slider-value" id="base_value">90°</span>
 </div>
 
 <div class="slider-container">
     <span class="slider-label">Arm:</span>
-    <input type="range" class="slider" id="arm_slider" min="40" max="140" value="90" onchange="s('arm',this.value)">
+    <input type="range" class="slider" id="arm_slider" min="40" max="140" value="90" onchange="s('arm',this.value)" {disabled}>
     <span class="slider-value" id="arm_value">90°</span>
 </div>
 
 <div class="slider-container">
     <span class="slider-label">Claw:</span>
-    <input type="range" class="slider" id="claw_slider" min="40" max="140" value="90" onchange="s('claw',this.value)">
+    <input type="range" class="slider" id="claw_slider" min="40" max="140" value="90" onchange="s('claw',this.value)" {disabled}>
     <span class="slider-value" id="claw_value">90°</span>
 </div>
 
-<button id="reset" onclick="resetAll()">🔄 Reset All</button>
+<button id="reset" onclick="resetAll()" {disabled}>🔄 Reset All</button>
 
+</div>""".format(overlay_style=overlay_style, disabled=disabled_attr) + """
 <script>
 function c(action) {
     fetch('./' + action + '?').catch(e => console.log('Error:', e));
@@ -335,6 +392,11 @@ window.onload = function() {
 def process_request(request):
     """Process the HTTP request without blocking the server"""
     print("Received request:", request)
+
+    # When SERVER_BRAKE is active and competition is not running, ignore all commands
+    if SERVER_BRAKE and not server_competition_running:
+        print("SERVER_BRAKE: control locked, ignoring command")
+        return
     
     # Extract the query string part (after the ?)
     if '?' in request:
@@ -446,7 +508,7 @@ def serve(connection):
 
     while True:
         # Periodic HTTPS status report
-        if time.ticks_diff(time.ticks_ms(), last_report) >= REPORT_DELAY * 1000:
+        if SERVER_ENABLE and time.ticks_diff(time.ticks_ms(), last_report) >= REPORT_DELAY * 1000:
             send_status()
             last_report = time.ticks_ms()
 
