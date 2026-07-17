@@ -172,13 +172,32 @@ mpremote reset
 
 ## Connecting to the Robot
 
-1. Power on the robot. The onboard LED on the Pico W turns **on** when the access point is ready (usually within 5 seconds).
-2. On your phone, go to **Settings → Wi-Fi** and connect to:
-   - **Network:** `WIFI_SSID` value from `picobot_config.py` (default: `picobot-web`)
-   - **Password:** `WIFI_PASSWORD` value from `picobot_config.py` (default: `12345678`)
+### AP mode (default — `WIFI_MODE = 'AP'`)
+
+The Pico W creates its own Wi-Fi hotspot. No existing router is needed.
+
+1. Power on the robot. The onboard LED turns **on** when the access point is active (usually within 5 seconds).
+2. On your phone or laptop, open **Settings → Wi-Fi** and connect to:
+   - **Network:** value of `WIFI_SSID` in `picobot_config.py` (default: `picobot-web`)
+   - **Password:** value of `WIFI_PASSWORD` in `picobot_config.py` (default: `12345678`)
 3. Open a browser and navigate to **`http://192.168.4.1`**.
 
-> **Note:** Your phone may warn that the network has no internet access. Tap **"Stay connected"** or **"Use this network anyway"** to keep the connection.
+> **Note:** Your device may warn that the network has no internet access. Tap **"Stay connected"** or **"Use this network anyway"** to keep the connection.
+
+### STA mode (`WIFI_MODE = 'STA'`)
+
+The Pico W joins an existing Wi-Fi network. Both the robot and your phone must be on the same network.
+
+1. Edit `PicoBot/picobot_config.py`:
+   ```python
+   WIFI_MODE     = 'STA'
+   WIFI_SSID     = 'YourNetworkName'
+   WIFI_PASSWORD = 'YourPassword'
+   ```
+2. Upload the updated `picobot_config.py` to the board.
+3. Power on the robot. The onboard LED turns **on** when the connection is established.
+4. Check your router's admin page (or the Thonny serial console) to find the IP address the router assigned to the Pico W.
+5. Open a browser and navigate to **`http://<assigned-ip>`**.
 
 ---
 
