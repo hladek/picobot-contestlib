@@ -17,7 +17,7 @@ import ubinascii
 import urequests
 import ujson
 from picobot import PicoBot
-from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE
+from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE, REPORT_AUTH
 import rp2
 
 
@@ -485,9 +485,12 @@ def send_status():
     global server_command, server_online, server_competition_ready, server_competition_running
     try:
         status = get_board_status()
+        headers = {'Content-Type': 'application/json'}
+        if REPORT_AUTH is not None:
+            headers['Authorization'] = 'Bearer ' + REPORT_AUTH
         response = urequests.post(
             REPORT_URL,
-            headers={'Content-Type': 'application/json'},
+            headers=headers,
             data=ujson.dumps(status),
         )
         server_command = int(response.text.strip())
