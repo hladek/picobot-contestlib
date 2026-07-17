@@ -246,6 +246,7 @@ When `SERVER_ENABLE = True`, every `REPORT_DELAY` seconds the robot sends an HTT
 ```json
 {
   "mac":        "aa:bb:cc:dd:ee:ff",
+  "ip":         "192.168.4.1",
   "servo_base": 90,
   "servo_arm":  90,
   "servo_claw": 90,
@@ -256,6 +257,7 @@ When `SERVER_ENABLE = True`, every `REPORT_DELAY` seconds the robot sends an HTT
 | Field | Description |
 |-------|-------------|
 | `mac` | MAC address of the Pico W wireless adapter |
+| `ip` | IP address of the Pico W on its Wi-Fi network |
 | `servo_base` | Current base servo angle in degrees |
 | `servo_arm` | Current arm servo angle in degrees |
 | `servo_claw` | Current claw servo angle in degrees |

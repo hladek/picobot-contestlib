@@ -40,6 +40,9 @@ server_competition_running = False
 # Wireless adapter MAC address (resolved once at startup)
 wlan_mac = ubinascii.hexlify(network.WLAN(network.AP_IF).config('mac'), ':').decode()
 
+# IP address assigned after Wi-Fi connection (set at startup)
+wlan_ip = ''
+
 # Create robot object
 robot = PicoBot()
 
@@ -353,6 +356,7 @@ def get_board_status():
     """Return a dict with the current board state."""
     return {
         'mac':        wlan_mac,
+        'ip':         wlan_ip,
         'servo_base': robot.arm.current_angles.get(0, 90),
         'servo_arm':  robot.arm.current_angles.get(1, 90),
         'servo_claw': robot.arm.current_angles.get(2, 90),
@@ -441,6 +445,7 @@ try:
         ip = connect()
     else:
         ip = create_WiFi_AP()
+    wlan_ip = ip
     connection = open_socket(ip)
     print(f'Reporting status to {REPORT_URL} every {REPORT_DELAY}s')
     serve(connection)
