@@ -22,6 +22,11 @@ app = Flask(__name__)
 app.config.from_object(config)
 
 
+@app.template_filter('bitand')
+def bitand_filter(value, mask):
+    return int(value) & int(mask)
+
+
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
@@ -70,8 +75,43 @@ def init_db():
             FOREIGN KEY (mac) REFERENCES robots(mac)
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS competitions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            ended_at   TEXT
+        )
+    """)
     db.commit()
     db.close()
+
+
+# ---------------------------------------------------------------------------
+# Competition helpers
+# ---------------------------------------------------------------------------
+
+def get_active_competition(db):
+    """Return the active competition row (ready or running), or None."""
+    return db.execute(
+        "SELECT * FROM competitions WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+
+
+def get_competition_command(db):
+    """
+    Derive server_command from the current competition state:
+      no active competition → DEFAULT_COMMAND
+      competition ready (not started) → 0x01
+      competition running (started, not ended) → 0x03
+    """
+    comp = get_active_competition(db)
+    if comp is None:
+        return app.config['DEFAULT_COMMAND']
+    if comp['started_at'] is None:
+        return 0x01  # competition_ready
+    return 0x03      # competition_ready + competition_running
 
 
 # ---------------------------------------------------------------------------
@@ -125,33 +165,23 @@ def receive_status():
 
     db = get_db()
 
-    existing = db.execute('SELECT command FROM robots WHERE mac = ?', (mac,)).fetchone()
-
-    if existing is None:
-        db.execute(
-            """INSERT INTO robots
+    db.execute(
+        """INSERT INTO robots
                (mac, first_seen, last_seen, request_count,
                 servo_base, servo_arm, servo_claw, uptime_ms, command)
-               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)""",
-            (mac, now, now, servo_base, servo_arm, servo_claw, uptime_ms,
-             app.config['DEFAULT_COMMAND']),
-        )
-        command = app.config['DEFAULT_COMMAND']
-    else:
-        db.execute(
-            """UPDATE robots SET
-               last_seen     = ?,
+               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+           ON CONFLICT(mac) DO UPDATE SET
+               last_seen     = excluded.last_seen,
                request_count = request_count + 1,
-               servo_base    = ?,
-               servo_arm     = ?,
-               servo_claw    = ?,
-               uptime_ms     = ?
-               WHERE mac = ?""",
-            (now, servo_base, servo_arm, servo_claw, uptime_ms, mac),
-        )
-        command = existing['command']
+               servo_base    = excluded.servo_base,
+               servo_arm     = excluded.servo_arm,
+               servo_claw    = excluded.servo_claw,
+               uptime_ms     = excluded.uptime_ms""",
+        (mac, now, now, servo_base, servo_arm, servo_claw, uptime_ms,
+         app.config['DEFAULT_COMMAND']),
+    )
 
-    db.commit()
+    command = get_competition_command(db)
 
     # Record individual request in history
     db.execute(
@@ -187,257 +217,397 @@ def set_command(mac):
     return redirect(url_for('dashboard'))
 
 
+@app.route('/competition')
+def competition_view():
+    db = get_db()
+    active = get_active_competition(db)
+    past = db.execute(
+        'SELECT * FROM competitions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC'
+    ).fetchall()
+
+    def duration(row):
+        if not row['started_at'] or not row['ended_at']:
+            return '—'
+        try:
+            s = datetime.fromisoformat(row['started_at'])
+            e = datetime.fromisoformat(row['ended_at'])
+            secs = int((e - s).total_seconds())
+            h, rem = divmod(secs, 3600)
+            m, s = divmod(rem, 60)
+            return f'{h:02d}:{m:02d}:{s:02d}'
+        except Exception:
+            return '—'
+
+    return render_template_string(COMPETITION_HTML, active=active, past=past, duration=duration)
+
+
+@app.route('/competition/create', methods=['POST'])
+def competition_create():
+    name = request.form.get('name', '').strip()
+    if not name:
+        return redirect(url_for('competition_view'))
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute('INSERT INTO competitions (name, created_at) VALUES (?, ?)', (name, now))
+    db.commit()
+    return redirect(url_for('competition_view'))
+
+
+@app.route('/competition/<int:comp_id>/start', methods=['POST'])
+def competition_start(comp_id):
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute(
+        'UPDATE competitions SET started_at = ? WHERE id = ? AND started_at IS NULL AND ended_at IS NULL',
+        (now, comp_id),
+    )
+    db.commit()
+    return redirect(url_for('competition_view'))
+
+
+@app.route('/competition/<int:comp_id>/stop', methods=['POST'])
+def competition_stop(comp_id):
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute(
+        'UPDATE competitions SET ended_at = ? WHERE id = ? AND started_at IS NOT NULL AND ended_at IS NULL',
+        (now, comp_id),
+    )
+    db.commit()
+    return redirect(url_for('competition_view'))
+
+
 @app.route('/')
 def dashboard():
     db = get_db()
     robots = db.execute(
         'SELECT * FROM robots ORDER BY last_seen DESC'
     ).fetchall()
-    return render_template_string(DASHBOARD_HTML, robots=robots)
+    active = get_active_competition(db)
+    return render_template_string(DASHBOARD_HTML, robots=robots, active=active)
 
 
 # ---------------------------------------------------------------------------
 # Dashboard HTML
 # ---------------------------------------------------------------------------
 
-DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
+# ---------------------------------------------------------------------------
+# Shared HTML fragments (Bootstrap 5)
+# ---------------------------------------------------------------------------
+
+_BS_HEAD = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PicoBot Fleet Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: Arial, sans-serif;
-    background: #f0f2f5;
-    padding: 24px;
-    color: #222;
-}
-h1 {
-    font-size: 1.8em;
-    margin-bottom: 20px;
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #fff;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-thead { background: #343a40; color: #fff; }
-th, td {
-    padding: 12px 16px;
-    text-align: left;
-    border-bottom: 1px solid #e9ecef;
-    vertical-align: middle;
-}
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: #f8f9fa; }
-.badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 0.82em;
-    font-weight: bold;
-}
-.badge-ready   { background: #d4edda; color: #155724; }
-.badge-running { background: #cce5ff; color: #004085; }
-.badge-off     { background: #e2e3e5; color: #383d41; }
-.cmd-form { display: flex; gap: 6px; align-items: center; }
-.cmd-form input[type=number] {
-    width: 70px;
-    padding: 4px 8px;
-    border: 1px solid #ced4da;
-    border-radius: 6px;
-    font-size: 0.95em;
-}
-.cmd-form button {
-    padding: 4px 12px;
-    background: #007bff;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.95em;
-}
-.cmd-form button:hover { background: #0056b3; }
-.no-robots { padding: 32px; text-align: center; color: #6c757d; font-size: 1.1em; }
-</style>
-</head>
-<body>
-<h1>🤖 PicoBot Fleet Dashboard</h1>
-{% if robots %}
-<table>
-  <thead>
-    <tr>
-      <th>MAC Address</th>
-      <th>First Seen (UTC)</th>
-      <th>Last Seen (UTC)</th>
-      <th>Requests</th>
-      <th>Servo Base</th>
-      <th>Servo Arm</th>
-      <th>Servo Claw</th>
-      <th>Uptime (ms)</th>
-      <th>State</th>
-      <th>Command</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r in robots %}
-    <tr>
-      <td><a href="/robot/{{ r.mac }}"><code>{{ r.mac }}</code></a></td>
-      <td>{{ r.first_seen[:19].replace('T',' ') }}</td>
-      <td>{{ r.last_seen[:19].replace('T',' ') }}</td>
-      <td>{{ r.request_count }}</td>
-      <td>{{ r.servo_base }}°</td>
-      <td>{{ r.servo_arm }}°</td>
-      <td>{{ r.servo_claw }}°</td>
-      <td>{{ r.uptime_ms }}</td>
-      <td>
-        {% set cmd = r.command %}
-        {% if cmd & 2 %}
-          <span class="badge badge-running">Running</span>
-        {% endif %}
-        {% if cmd & 1 %}
-          <span class="badge badge-ready">Ready</span>
-        {% endif %}
-        {% if not (cmd & 3) %}
-          <span class="badge badge-off">Idle</span>
-        {% endif %}
-      </td>
-      <td>
-        <form class="cmd-form" method="post"
-              action="/robot/{{ r.mac }}/command">
-          <input type="number" name="command" min="0" max="255"
-                 value="{{ r.command }}">
-          <button type="submit">Set</button>
-        </form>
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-  <div class="no-robots">No robots have reported in yet.</div>
-{% endif %}
-</body>
-</html>"""
+  body { background: #f0f2f5; }
+  .table thead { background: #343a40; color: #fff; }
+  .timer { font-size: 3rem; font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: .05em; }
+  .stat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6c757d; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; }
+</style>"""
 
+def _nav(active):
+    """Render a Bootstrap navbar. active: 'dashboard' | 'competition'"""
+    def _li(label, href, key):
+        cls = 'nav-link active fw-semibold' if active == key else 'nav-link'
+        return f'<li class="nav-item"><a class="{cls}" href="{href}">{label}</a></li>'
+    return (
+        '<nav class="navbar navbar-expand navbar-dark bg-dark px-3 mb-4">'
+        '<a class="navbar-brand me-4" href="/">🤖 PicoBot</a>'
+        '<ul class="navbar-nav">'
+        + _li('Dashboard', '/', 'dashboard')
+        + _li('Competition', '/competition', 'competition')
+        + '</ul></nav>'
+    )
 
-DETAIL_HTML = """<!DOCTYPE html>
+NAV_DASHBOARD   = _nav('dashboard')
+NAV_COMPETITION = _nav('competition')
+NAV_DETAIL      = _nav(None)
+
+# ---------------------------------------------------------------------------
+# Dashboard template
+# ---------------------------------------------------------------------------
+
+DASHBOARD_HTML = (
+"""<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PicoBot {{ robot.mac }}</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: Arial, sans-serif;
-    background: #f0f2f5;
-    padding: 24px;
-    color: #222;
-}
-h1 { font-size: 1.6em; margin-bottom: 6px; }
-.sub { color: #6c757d; margin-bottom: 20px; font-size: 0.95em; }
-.back { display: inline-block; margin-bottom: 20px; color: #007bff; text-decoration: none; font-size: 0.95em; }
-.back:hover { text-decoration: underline; }
-.summary {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-}
-.card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 14px 20px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-    min-width: 140px;
-}
-.card .label { font-size: 0.78em; color: #6c757d; text-transform: uppercase; letter-spacing: 0.05em; }
-.card .value { font-size: 1.4em; font-weight: bold; margin-top: 2px; }
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #fff;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-thead { background: #343a40; color: #fff; }
-th, td {
-    padding: 10px 16px;
-    text-align: left;
-    border-bottom: 1px solid #e9ecef;
-}
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: #f8f9fa; }
-.empty { padding: 32px; text-align: center; color: #6c757d; }
-</style>
+<head>""" + _BS_HEAD + """
+<title>PicoBot Dashboard</title>
 </head>
 <body>
-<a class="back" href="/">← Back to dashboard</a>
-<h1>🤖 {{ robot.mac }}</h1>
-<p class="sub">First seen: {{ robot.first_seen[:19].replace('T',' ') }} UTC &nbsp;|&nbsp;
-               Total requests: {{ robot.request_count }}</p>
+""" + NAV_DASHBOARD + """
+<div class="container-fluid px-4">
+  <h4 class="mb-3">Fleet Dashboard</h4>
 
-<div class="summary">
-  <div class="card">
-    <div class="label">Servo Base</div>
-    <div class="value">{{ robot.servo_base }}°</div>
+  {% if active %}
+    {% if active.started_at %}
+      <div class="alert alert-primary d-flex align-items-center gap-2 py-2" role="alert">
+        <span class="badge bg-primary">🏁 Running</span>
+        Competition: <strong>{{ active.name }}</strong>
+        — robots receive <code>competition_running = True</code>
+      </div>
+    {% else %}
+      <div class="alert alert-success d-flex align-items-center gap-2 py-2" role="alert">
+        <span class="badge bg-success">✅ Ready</span>
+        Competition: <strong>{{ active.name }}</strong>
+        — robots receive <code>competition_ready = True</code>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if robots %}
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover table-bordered mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>MAC Address</th>
+            <th>First Seen (UTC)</th>
+            <th>Last Seen (UTC)</th>
+            <th>Requests</th>
+            <th>Base</th><th>Arm</th><th>Claw</th>
+            <th>Uptime (ms)</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in robots %}
+          {% set cmd = r.command %}
+          <tr>
+            <td><a href="/robot/{{ r.mac }}"><code>{{ r.mac }}</code></a></td>
+            <td class="text-nowrap">{{ r.first_seen[:19].replace('T',' ') }}</td>
+            <td class="text-nowrap">{{ r.last_seen[:19].replace('T',' ') }}</td>
+            <td class="text-center">{{ r.request_count }}</td>
+            <td class="text-center">{{ r.servo_base }}°</td>
+            <td class="text-center">{{ r.servo_arm }}°</td>
+            <td class="text-center">{{ r.servo_claw }}°</td>
+            <td class="text-center">{{ r.uptime_ms }}</td>
+            <td>
+              {% if cmd | bitand(2) %}<span class="badge bg-primary">Running</span>{% endif %}
+              {% if cmd | bitand(1) %}<span class="badge bg-success">Ready</span>{% endif %}
+              {% if not (cmd | bitand(3)) %}<span class="badge bg-secondary">Idle</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-  <div class="card">
-    <div class="label">Servo Arm</div>
-    <div class="value">{{ robot.servo_arm }}°</div>
-  </div>
-  <div class="card">
-    <div class="label">Servo Claw</div>
-    <div class="value">{{ robot.servo_claw }}°</div>
-  </div>
-  <div class="card">
-    <div class="label">Uptime (ms)</div>
-    <div class="value">{{ robot.uptime_ms }}</div>
-  </div>
-  <div class="card">
-    <div class="label">Command</div>
-    <div class="value">{{ robot.command }}</div>
-  </div>
+  {% else %}
+    <div class="text-center text-muted py-5">No robots have reported in yet.</div>
+  {% endif %}
 </div>
-
-{% if rows %}
-<table>
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Received (UTC)</th>
-      <th>Servo Base</th>
-      <th>Servo Arm</th>
-      <th>Servo Claw</th>
-      <th>Uptime (ms)</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for row in rows %}
-    <tr>
-      <td>{{ row.id }}</td>
-      <td>{{ row.received_at[:19].replace('T',' ') }}</td>
-      <td>{{ row.servo_base }}°</td>
-      <td>{{ row.servo_arm }}°</td>
-      <td>{{ row.servo_claw }}°</td>
-      <td>{{ row.uptime_ms }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-  <div class="empty">No requests recorded yet.</div>
-{% endif %}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-</html>"""
+</html>""")
 
+# ---------------------------------------------------------------------------
+# Robot detail template
+# ---------------------------------------------------------------------------
+
+DETAIL_HTML = (
+"""<!DOCTYPE html>
+<html lang="en">
+<head>""" + _BS_HEAD + """
+<title>PicoBot {{ robot.mac }}</title>
+</head>
+<body>
+""" + NAV_DETAIL + """
+<div class="container-fluid px-4">
+  <a href="/" class="btn btn-sm btn-outline-secondary mb-3">← Back to Dashboard</a>
+
+  <h4 class="mb-0"><code>{{ robot.mac }}</code></h4>
+  <p class="text-muted small mb-3">
+    First seen: {{ robot.first_seen[:19].replace('T',' ') }} UTC
+     |  Total requests: <strong>{{ robot.request_count }}</strong>
+  </p>
+
+  <div class="row g-3 mb-4">
+    {% for label, val in [
+        ('Servo Base',  robot.servo_base|string + '°'),
+        ('Servo Arm',   robot.servo_arm|string  + '°'),
+        ('Servo Claw',  robot.servo_claw|string + '°'),
+        ('Uptime ms',   robot.uptime_ms|string),
+    ] %}
+    <div class="col-6 col-sm-3 col-lg-2">
+      <div class="card shadow-sm text-center py-3">
+        <div class="stat-label">{{ label }}</div>
+        <div class="stat-value">{{ val }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h5 class="mb-3">Request History</h5>
+  {% if rows %}
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover table-bordered mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Received (UTC)</th>
+            <th>Servo Base</th><th>Servo Arm</th><th>Servo Claw</th>
+            <th>Uptime (ms)</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.id }}</td>
+            <td class="text-nowrap">{{ row.received_at[:19].replace('T',' ') }}</td>
+            <td class="text-center">{{ row.servo_base }}°</td>
+            <td class="text-center">{{ row.servo_arm }}°</td>
+            <td class="text-center">{{ row.servo_claw }}°</td>
+            <td class="text-center">{{ row.uptime_ms }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+    <div class="text-center text-muted py-5">No requests recorded yet.</div>
+  {% endif %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>""")
+
+# ---------------------------------------------------------------------------
+# Competition template
+# ---------------------------------------------------------------------------
+
+COMPETITION_HTML = (
+"""<!DOCTYPE html>
+<html lang="en">
+<head>""" + _BS_HEAD + """
+<title>PicoBot Competition</title>
+</head>
+<body>
+""" + NAV_COMPETITION + """
+<div class="container-fluid px-4">
+  <h4 class="mb-4">Competition</h4>
+
+  {# ── Active competition panel ── #}
+  {% if active %}
+
+    {% if active.started_at is none %}
+    {# READY #}
+    <div class="card shadow-sm mb-4" style="max-width:560px">
+      <div class="card-body">
+        <h5 class="card-title d-flex align-items-center gap-2">
+          {{ active.name }}
+          <span class="badge bg-success">✅ Ready</span>
+        </h5>
+        <p class="text-muted mb-3">
+          Competition is set up. Robots are receiving
+          <code>competition_ready = True</code>.
+        </p>
+        <div class="d-flex gap-2">
+          <form method="post" action="/competition/{{ active.id }}/start">
+            <button class="btn btn-success" type="submit">▶ Start Competition</button>
+          </form>
+          <form method="post" action="/competition/{{ active.id }}/stop"
+                onsubmit="return confirm('Cancel this competition?')">
+            <button class="btn btn-outline-danger" type="submit">✕ Cancel</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {% else %}
+    {# RUNNING #}
+    <div class="card shadow-sm mb-4 border-primary" style="max-width:560px">
+      <div class="card-body">
+        <h5 class="card-title d-flex align-items-center gap-2">
+          {{ active.name }}
+          <span class="badge bg-primary">🏁 Running</span>
+        </h5>
+        <div class="timer text-primary my-3" id="timer">00:00:00</div>
+        <p class="text-muted mb-3">
+          Robots are receiving <code>competition_ready = True</code>
+          and <code>competition_running = True</code>.
+        </p>
+        <form method="post" action="/competition/{{ active.id }}/stop"
+              onsubmit="return confirm('Stop the competition?')">
+          <button class="btn btn-danger" type="submit">⏹ Stop Competition</button>
+        </form>
+      </div>
+    </div>
+    <script>
+      const startedAt = new Date("{{ active.started_at }}");
+      function updateTimer() {
+        const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+        const h = Math.floor(elapsed / 3600);
+        const m = Math.floor((elapsed % 3600) / 60);
+        const s = elapsed % 60;
+        document.getElementById('timer').textContent =
+          String(h).padStart(2,'0') + ':' +
+          String(m).padStart(2,'0') + ':' +
+          String(s).padStart(2,'0');
+      }
+      setInterval(updateTimer, 1000);
+      updateTimer();
+    </script>
+    {% endif %}
+
+  {% else %}
+  {# NO ACTIVE COMPETITION #}
+  <div class="card shadow-sm mb-4" style="max-width:560px">
+    <div class="card-body">
+      <h5 class="card-title">Create Competition</h5>
+      <p class="text-muted mb-3">
+        Enter a name and press <em>Create</em>. The competition will be set to
+        <strong>Ready</strong> and robots will receive
+        <code>competition_ready = True</code>.
+      </p>
+      <form method="post" action="/competition/create">
+        <div class="input-group">
+          <input type="text" class="form-control" name="name"
+                 placeholder="Competition name…" required autofocus>
+          <button class="btn btn-primary" type="submit">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Past competitions ── #}
+  {% if past %}
+  <h5 class="mb-3">Past Competitions</h5>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover table-bordered mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>#</th><th>Name</th>
+            <th>Created (UTC)</th><th>Started (UTC)</th>
+            <th>Ended (UTC)</th><th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in past %}
+          <tr>
+            <td>{{ c.id }}</td>
+            <td>{{ c.name }}</td>
+            <td class="text-nowrap">{{ c.created_at[:19].replace('T',' ') }}</td>
+            <td class="text-nowrap">{{ c.started_at[:19].replace('T',' ') if c.started_at else '—' }}</td>
+            <td class="text-nowrap">{{ c.ended_at[:19].replace('T',' ') }}</td>
+            <td><code>{{ duration(c) }}</code></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>""")
 
 # ---------------------------------------------------------------------------
 # Entry point
