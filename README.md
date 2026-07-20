@@ -1,6 +1,6 @@
 # PicoBot Web Control
 
-A MicroPython application that turns a **Raspberry Pi Pico W** into a Wi-Fi client and serves a touch-friendly web interface for controlling a 4-wheel robot with a 3-axis servo arm.  
+A MicroPython application that turns a **Raspberry Pi Pico 2 W** into a Wi-Fi client and serves a touch-friendly web interface for controlling a 4-wheel robot with a 3-axis servo arm.  
 Optionally the robot reports its status to an external HTTPS server at a configurable interval and receives back competition-state commands.
 
 ---
@@ -11,7 +11,7 @@ Optionally the robot reports its status to an external HTTPS server at a configu
 2. [Software Overview](#software-overview)
 3. [File Structure](#file-structure)
 4. [Configuration](#configuration)
-5. [Installing to Raspberry Pi Pico W](#installing-to-raspberry-pi-pico-w)
+5. [Installing to Raspberry Pi Pico 2 W](#installing-to-raspberry-pi-pico-2-w)
 6. [Connecting to the Robot](#connecting-to-the-robot)
 7. [Controlling the Robot from a Phone Browser](#controlling-the-robot-from-a-phone-browser)
 8. [Server Reporting Feature](#server-reporting-feature)
@@ -23,18 +23,18 @@ Optionally the robot reports its status to an external HTTPS server at a configu
 
 | Component | Details |
 |-----------|---------|
-| Microcontroller | Raspberry Pi Pico W |
+| Microcontroller | Raspberry Pi Pico 2 W (RP2350) |
 | Motor driver board | PCA9685-based PWM board (I²C address `0x40`, I²C0: SDA GP20, SCL GP21) |
 | Drive motors | 4× DC motors — Left Front, Left Back, Right Front, Right Back |
 | Arm servo controller | PCA9685-based PWM board (I²C1: SDA GP2, SCL GP3) |
 | Arm servos | 3× servo motors on channels 0 (base), 1 (arm), 2 (claw) |
-| Power supply | Suitable battery pack for motors and Pico W |
+| Power supply | Suitable battery pack for motors and Pico 2 W |
 
 ---
 
 ## Software Overview
 
-The application runs entirely on the Pico W under **MicroPython**.  
+The application runs entirely on the Pico 2 W under **MicroPython**.  
 When powered on it:
 
 1. Connects to an existing Wi-Fi network (STA mode) using the SSID and password set in `picobot_config.py`.
@@ -52,7 +52,7 @@ The event loop is non-blocking: the socket has a 1-second accept timeout so the 
 
   ┌─────────────┐  joins existing Wi-Fi
   │  PicoBot    │◄──────────────────────┐
-  │  (Pico W)   │  <router-assigned-ip> │
+  │  (Pico 2 W)   │  <router-assigned-ip> │
   └──────┬──────┘                       │
          │ HTTP control page             │
          │◄───────────────────────┐     │
@@ -138,19 +138,19 @@ REPORT_AUTH = None
 
 ---
 
-## Installing to Raspberry Pi Pico W
+## Installing to Raspberry Pi Pico 2 W
 
 ### Prerequisites
 
 * [Thonny IDE](https://thonny.org/) **or** the `mpremote` command-line tool.
-* MicroPython firmware for Pico W — download the latest `.uf2` from [micropython.org](https://micropython.org/download/RPI_PICO_W/).
+* MicroPython firmware for Pico 2 W — download the latest `.uf2` from [micropython.org](https://micropython.org/download/RPI_PICO2_W/).
 
 ### Step 1 — Flash MicroPython firmware
 
-1. Hold the **BOOTSEL** button on the Pico W and connect it to your computer via USB.
-2. It mounts as a USB drive called **`RPI-RP2`**.
+1. Hold the **BOOTSEL** button on the Pico 2 W and connect it to your computer via USB.
+2. It mounts as a USB drive called **`RPI-RP2350`**.
 3. Drag and drop the downloaded `.uf2` file onto the drive.
-4. The Pico W reboots automatically into MicroPython.
+4. The Pico 2 W reboots automatically into MicroPython.
 
 ### Step 2 — Upload the files (Thonny)
 
@@ -159,7 +159,7 @@ REPORT_AUTH = None
 3. Edit `PicoBot/picobot_config.py` with your desired settings.
 4. Upload the files in this order:
 
-   | Local path | Upload to (on Pico W) |
+   | Local path | Upload to (on Pico 2 W) |
    |------------|----------------------|
    | `main.py` | `/main.py` |
    | `PicoBot/picobot_config.py` | `/PicoBot/picobot_config.py` |
@@ -199,7 +199,7 @@ mpremote reset
 
 ## Connecting to the Robot
 
-The Pico W joins an existing Wi-Fi network. Both the robot and your phone must be on the same network.
+The Pico 2 W joins an existing Wi-Fi network. Both the robot and your phone must be on the same network.
 
 1. Edit `PicoBot/picobot_config.py`:
    ```python
@@ -208,7 +208,7 @@ The Pico W joins an existing Wi-Fi network. Both the robot and your phone must b
    ```
 2. Upload the updated `picobot_config.py` to the board.
 3. Power on the robot. The onboard LED turns **on** when the connection is established.
-4. Check your router's admin page (or the Thonny serial console) to find the IP address the router assigned to the Pico W.
+4. Check your router's admin page (or the Thonny serial console) to find the IP address the router assigned to the Pico 2 W.
 5. Open a browser and navigate to **`http://<assigned-ip>`**.
 
 ---
@@ -287,8 +287,8 @@ When `SERVER_ENABLE = True`, every `REPORT_DELAY` seconds the robot sends an HTT
 
 | Field | Description |
 |-------|-------------|
-| `mac` | MAC address of the Pico W wireless adapter |
-| `ip` | IP address of the Pico W on its Wi-Fi network |
+| `mac` | MAC address of the Pico 2 W wireless adapter |
+| `ip` | IP address of the Pico 2 W on its Wi-Fi network |
 | `servo_base` | Current base servo angle in degrees |
 | `servo_arm` | Current arm servo angle in degrees |
 | `servo_claw` | Current claw servo angle in degrees |
