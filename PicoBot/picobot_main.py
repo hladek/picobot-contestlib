@@ -17,7 +17,7 @@ import ubinascii
 import urequests
 import ujson
 from picobot import PicoBot
-from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE, REPORT_AUTH, WIFI_SSID, WIFI_PASSWORD, WIFI_MODE
+from picobot_config import REPORT_URL, REPORT_DELAY, SERVER_ENABLE, SERVER_BRAKE, REPORT_AUTH, WIFI_SSID, WIFI_PASSWORD
 import rp2
 
 
@@ -38,7 +38,7 @@ server_competition_ready = False
 server_competition_running = False
 
 # Wireless adapter MAC address (resolved once at startup)
-wlan_mac = ubinascii.hexlify(network.WLAN(network.AP_IF).config('mac'), ':').decode()
+wlan_mac = ubinascii.hexlify(network.WLAN(network.STA_IF).config('mac'), ':').decode()
 
 # IP address assigned after Wi-Fi connection (set at startup)
 wlan_ip = ''
@@ -130,18 +130,6 @@ def connect():
     led.on()
     print(f'Connected on {ip}')
     return ip
-
-def create_WiFi_AP():
-    ap = network.WLAN(network.AP_IF)
-    ap.config(essid=WIFI_SSID, password=WIFI_PASSWORD)
-    ap.active(True)
-
-    while ap.active == False:
-        pass
-    print("Access point active")
-    print(ap.ifconfig())
-    led.on()
-    return '192.168.4.1'
 
 def open_socket(ip):
     # Open a socket
@@ -441,10 +429,7 @@ def serve(connection):
 
 
 try:
-    if WIFI_MODE == 'STA':
-        ip = connect()
-    else:
-        ip = create_WiFi_AP()
+    ip = connect()
     wlan_ip = ip
     connection = open_socket(ip)
     print(f'Reporting status to {REPORT_URL} every {REPORT_DELAY}s')

@@ -1,6 +1,6 @@
 # PicoBot Web Control
 
-A MicroPython application that turns a **Raspberry Pi Pico W** into a Wi-Fi access point and serves a touch-friendly web interface for controlling a 4-wheel robot with a 3-axis servo arm.  
+A MicroPython application that turns a **Raspberry Pi Pico W** into a Wi-Fi client and serves a touch-friendly web interface for controlling a 4-wheel robot with a 3-axis servo arm.  
 Optionally the robot reports its status to an external HTTPS server at a configurable interval and receives back competition-state commands.
 
 ---
@@ -37,8 +37,8 @@ Optionally the robot reports its status to an external HTTPS server at a configu
 The application runs entirely on the Pico W under **MicroPython**.  
 When powered on it:
 
-1. Creates a Wi-Fi access point (or connects to one in STA mode) using the SSID and password set in `picobot_config.py`.
-2. Opens an HTTP server on port **80** at IP **`192.168.4.1`**.
+1. Connects to an existing Wi-Fi network (STA mode) using the SSID and password set in `picobot_config.py`.
+2. Opens an HTTP server on port **80** at the router-assigned IP address.
 3. Serves a touch-optimised control page to any browser on the same Wi-Fi network.
 4. *(Optional)* Periodically POSTs the board status to a remote HTTPS server and reads back a single integer that controls competition state flags.
 
@@ -47,24 +47,24 @@ The event loop is non-blocking: the socket has a 1-second accept timeout so the 
 ### System Diagram
 
 ```
-  AP mode (default)                         STA mode (optional)
-  ─────────────────────────────────────     ──────────────────────────────────────────────
+  STA mode
+  ──────────────────────────────────────────────
 
-  ┌─────────────┐  Wi-Fi hotspot            ┌─────────────┐  joins existing Wi-Fi
-  │  PicoBot    │◄────────────────────┐     │  PicoBot    │◄──────────────────────┐
-  │  (Pico W)   │  192.168.4.1:80     │     │  (Pico W)   │  <router-assigned-ip> │
-  └──────┬──────┘                     │     └──────┬──────┘                       │
-         │ HTTP control page          │            │ HTTP control page             │
-         │◄───────────────────────┐   │            │◄───────────────────────┐     │
-         │                        │   │            │                        │     │
-         │              ┌─────────┴───┴──┐         │              ┌─────────┴─────┴──┐
-         │              │  Phone /       │         │              │  Phone /         │
-         │              │  Browser       │         │              │  Browser         │
-         │              └────────────────┘         │              └──────────────────┘
-         │                                         │
-         │ HTTPS POST /status (JSON)               │ HTTPS POST /status (JSON)
-         │ ◄── server_command (int) ───            │ ◄── server_command (int) ───
-         ▼                                         ▼
+  ┌─────────────┐  joins existing Wi-Fi
+  │  PicoBot    │◄──────────────────────┐
+  │  (Pico W)   │  <router-assigned-ip> │
+  └──────┬──────┘                       │
+         │ HTTP control page             │
+         │◄───────────────────────┐     │
+         │                        │     │
+         │              ┌─────────┴─────┴──┐
+         │              │  Phone /         │
+         │              │  Browser         │
+         │              └──────────────────┘
+         │
+         │ HTTPS POST /status (JSON)
+         │ ◄── server_command (int) ───
+         ▼
   ┌──────────────────────────────────────────────────────────┐
   │  Competition Server  (Server/app.py — Flask + SQLite)    │
   │                                                          │
@@ -102,10 +102,7 @@ All settings live in **`PicoBot/picobot_config.py`**. Edit this file before uplo
 ```python
 # PicoBot reporting configuration
 
-# Wi-Fi mode: 'AP' to create an access point, 'STA' to join an existing network
-WIFI_MODE = 'AP'
-
-# Wi-Fi network name (SSID) — used as AP name in AP mode, target network in STA mode
+# Wi-Fi network name (SSID) — target network to join in STA mode
 WIFI_SSID = 'picobot-web'
 
 # Wi-Fi password
@@ -131,8 +128,7 @@ REPORT_AUTH = None
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `WIFI_MODE` | `str` | `'AP'` | `'AP'` — Pico W creates its own access point. `'STA'` — Pico W connects to an existing Wi-Fi network. |
-| `WIFI_SSID` | `str` | `'picobot-web'` | Network name. In AP mode this is the name of the hotspot; in STA mode this is the network to join. |
+| `WIFI_SSID` | `str` | `'picobot-web'` | Name of the Wi-Fi network to join. |
 | `WIFI_PASSWORD` | `str` | `'12345678'` | Password for the Wi-Fi network. |
 | `SERVER_ENABLE` | `bool` | `True` | Enable/disable HTTPS status reporting entirely. When `False` the server status bar is also hidden from the web UI. |
 | `SERVER_BRAKE` | `bool` | `False` | When `True`, all motor and arm commands are blocked until the server signals that the competition is running (bit 1 of `server_command`). The web UI shows a lock overlay. |
@@ -175,7 +171,7 @@ REPORT_AUTH = None
 
    To upload a file: right-click it in the local panel → *Upload to /* (create the `/PicoBot/` directory first if needed).
 
-5. Press the **Reset** button or disconnect and reconnect the USB cable. The onboard LED lights up when the access point is active.
+5. Press the **Reset** button or disconnect and reconnect the USB cable. The onboard LED lights up when the Wi-Fi connection is established.
 
 ### Step 2 (alternative) — Upload with mpremote
 
@@ -203,25 +199,10 @@ mpremote reset
 
 ## Connecting to the Robot
 
-### AP mode (default — `WIFI_MODE = 'AP'`)
-
-The Pico W creates its own Wi-Fi hotspot. No existing router is needed.
-
-1. Power on the robot. The onboard LED turns **on** when the access point is active (usually within 5 seconds).
-2. On your phone or laptop, open **Settings → Wi-Fi** and connect to:
-   - **Network:** value of `WIFI_SSID` in `picobot_config.py` (default: `picobot-web`)
-   - **Password:** value of `WIFI_PASSWORD` in `picobot_config.py` (default: `12345678`)
-3. Open a browser and navigate to **`http://192.168.4.1`**.
-
-> **Note:** Your device may warn that the network has no internet access. Tap **"Stay connected"** or **"Use this network anyway"** to keep the connection.
-
-### STA mode (`WIFI_MODE = 'STA'`)
-
 The Pico W joins an existing Wi-Fi network. Both the robot and your phone must be on the same network.
 
 1. Edit `PicoBot/picobot_config.py`:
    ```python
-   WIFI_MODE     = 'STA'
    WIFI_SSID     = 'YourNetworkName'
    WIFI_PASSWORD = 'YourPassword'
    ```
@@ -234,7 +215,7 @@ The Pico W joins an existing Wi-Fi network. Both the robot and your phone must b
 
 ## Controlling the Robot from a Phone Browser
 
-The web interface is optimised for touchscreens. After opening `http://192.168.4.1` you will see:
+The web interface is optimised for touchscreens. After opening `http://<assigned-ip>` you will see:
 
 ### Status Bar *(only when `SERVER_ENABLE = True`)*
 

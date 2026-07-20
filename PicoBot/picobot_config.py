@@ -1,9 +1,6 @@
 # PicoBot reporting configuration
 
-# Wi-Fi mode: 'AP' to create an access point, 'STA' to join an existing network
-WIFI_MODE = 'AP'
-
-# Wi-Fi network name (SSID) — used as AP name in AP mode, target network in STA mode
+# Wi-Fi network name (SSID) — target network to join in STA mode
 WIFI_SSID = 'picobot-web'
 
 # Wi-Fi password
