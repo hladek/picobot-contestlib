@@ -1,5 +1,6 @@
+# PicoBot Communication Protocol
 
-# 1. Introduction
+## 1. Introduction
 
 Communication protocols are a fundamental component of modern robotic systems, enabling reliable information exchange between robots, users, supervisory applications, and cloud-based services. The design of an appropriate communication protocol directly influences the reliability, scalability, and usability of a robotic platform. While advanced robotic systems often rely on sophisticated middleware such as the Robot Operating System (ROS 2) or industrial communication standards, educational and embedded robotic platforms frequently require lightweight solutions that can operate efficiently on resource-constrained hardware while remaining simple to deploy and maintain.
 
@@ -22,11 +23,11 @@ This document specifies the complete PicoBot communication protocol, including t
 The remainder of this document is organized as follows. Section 2 reviews the current state of the art in robotic communication protocols and positions the proposed solution relative to existing technologies. Section 3 analyzes the functional requirements that guided the protocol design. Section 4 presents the overall communication architecture, followed by detailed specifications of the browser control protocol and the robot-to-server communication protocol. Subsequent sections describe the competition server API, authentication mechanisms, sequence diagrams illustrating typical communication scenarios, and considerations regarding reliability, security, and future protocol extensions.
 
 
-## 2. Protocol Requirements Analysis
+## 3. Protocol Requirements
 
 The PicoBot communication protocol was designed to satisfy the functional requirements of educational robotics competitions while remaining lightweight enough for execution on resource-constrained embedded hardware such as the Raspberry Pi Pico W. The protocol addresses five primary requirements.
 
-### 2.1 Robot Authentication
+### 3.1 Robot Authentication
 
 Each robot participating in a competition must be uniquely identifiable to prevent duplicate registrations and unauthorized devices from influencing the competition.
 
@@ -41,7 +42,7 @@ This approach provides sufficient security for educational and laboratory enviro
 
 ---
 
-### 2.2 Synchronized Competition Start
+### 3.2 Synchronized Competition Start
 
 A key requirement of robotics competitions is ensuring that all robots begin under identical conditions.
 
@@ -55,7 +56,7 @@ The transition from the *ready* state (`1`) to the *running* state (`3`) acts as
 
 ---
 
-### 2.3 Automatic Timing
+### 3.3 Automatic Timing
 
 The protocol separates competition management from robot execution.
 
@@ -67,7 +68,7 @@ This centralized timing model simplifies firmware implementation while ensuring 
 
 ---
 
-### 2.4 Transmission of Completion Times
+### 3.4 Transmission of Completion Times
 
 The protocol supports automatic determination of competition results through periodic status reporting.
 
@@ -79,7 +80,7 @@ Future protocol versions may extend the status message with explicit task-comple
 
 ---
 
-### 2.5 Reliable Internet Communication
+### 3.5 Reliable Internet Communication
 
 Unlike purely local remote-control protocols, the PicoBot competition protocol is designed to operate across standard IP networks, including the public Internet.
 
@@ -94,7 +95,7 @@ This design prioritizes robustness and simplicity over strict real-time guarante
 
 ---
 
-### Summary
+### 3.6 Summary
 
 The proposed communication protocol satisfies the principal functional requirements of educational robotics competitions by combining lightweight HTTP/HTTPS communication with centralized competition management. The resulting architecture provides authenticated robot identification, synchronized competition control, centralized timing, reliable result collection, and Internet-capable communication while remaining sufficiently simple to execute on low-cost embedded hardware with limited computational resources.
 
@@ -111,7 +112,7 @@ The proposed communication protocol satisfies the principal functional requireme
 
 
 
-## 1. State of the Art
+## 2. State of the Art
 
 Communication protocols are fundamental components of modern robotic systems, enabling information exchange between robots, operators, cloud services, and supervisory control systems. The choice of a communication protocol depends on application requirements, including latency, reliability, scalability, computational resources, and network topology. Consequently, numerous communication approaches have been developed, ranging from lightweight request-response protocols for embedded systems to sophisticated middleware platforms supporting distributed autonomous robots.
 
@@ -144,22 +145,12 @@ The communication protocol proposed for the PicoBot system intentionally adopts 
 [7] Object Management Group. *Data Distribution Service (DDS) Version 1.4*. OMG Specification, 2015.
 
 
-# PicoBot Communication Protocol
-
-This document describes all communication protocols used in the PicoBot system.  
-There are two independent protocol layers:
-
-1. **Robot ↔ Browser** — HTTP control protocol (port 80, on-board web server)
-2. **Robot ↔ Competition Server** — HTTPS status/command protocol (configurable URL)
-
----
-
-## 1. Robot ↔ Browser Control Protocol
+## 4. Browser Control Protocol (Robot ↔ Browser)
 
 The PicoBot runs a minimal HTTP/1.0 server on **port 80**.  
 A phone or browser on the same Wi-Fi network sends plain HTTP GET requests to control the robot.
 
-### 1.1 General Request Format
+### 4.1 General Request Format
 
 ```
 GET /<command>? HTTP/1.1
@@ -168,7 +159,7 @@ Host: <robot-ip>
 
 Every control URL ends with a `?` (even when there are no query parameters). This is an implementation detail of the on-board request parser.
 
-### 1.2 Movement Commands
+### 4.2 Movement Commands
 
 Each request triggers a motor action followed by a 100 ms automatic stop.
 
@@ -192,7 +183,7 @@ GET /forward? HTTP/1.1
 Host: 192.168.1.42
 ```
 
-### 1.3 Servo Arm Commands
+### 4.3 Servo Arm Commands
 
 Servo positions are sent as query parameters appended to the root path.
 
@@ -217,7 +208,7 @@ GET /?servo_arm_slider=100&servo_claw_slider=60 HTTP/1.1
 Host: 192.168.1.42
 ```
 
-### 1.4 Reset Command
+### 4.4 Reset Command
 
 ```
 GET /reset_to_default? HTTP/1.1
@@ -226,7 +217,7 @@ Host: 192.168.1.42
 
 Returns all three servos smoothly to 90°.
 
-### 1.5 Response Format
+### 4.5 Response Format
 
 Every request — regardless of the command — receives the same response: the full HTML control page.
 
@@ -245,18 +236,18 @@ Content-type: text/plain
 Server Error
 ```
 
-### 1.6 Lock Behaviour (`SERVER_BRAKE`)
+### 4.6 Lock Behaviour (`SERVER_BRAKE`)
 
 When `SERVER_BRAKE = True` in `picobot_config.py` **and** `server_competition_running` is `False`, the robot silently ignores all movement and servo commands received over the control protocol.  
 The HTML page reflects this state with a lock overlay.
 
 ---
 
-## 2. Robot → Competition Server Status Protocol
+## 5. Robot-to-Server Status Protocol
 
 When `SERVER_ENABLE = True`, the robot periodically POSTs its current state to the competition server and receives back a command integer.
 
-### 2.1 Request
+### 5.1 Request
 
 | Property | Value |
 |----------|-------|
@@ -265,14 +256,14 @@ When `SERVER_ENABLE = True`, the robot periodically POSTs its current state to t
 | Content-Type | `application/json` |
 | Interval | Every `REPORT_DELAY` seconds (default: 10 s) |
 
-#### Headers
+#### Request Headers
 
 ```
 Content-Type: application/json
 Authorization: Bearer <token>          ← only when REPORT_AUTH is set
 ```
 
-#### JSON Body
+#### Request Body
 
 ```json
 {
@@ -294,7 +285,7 @@ Authorization: Bearer <token>          ← only when REPORT_AUTH is set
 | `servo_claw` | integer | Current claw servo angle in degrees |
 | `uptime_ms` | integer | Milliseconds since boot (`time.ticks_ms()`) |
 
-### 2.2 Response
+### 5.2 Response
 
 The server responds with a **plain-text integer** (no JSON wrapper, no newlines except possibly a trailing one).
 
@@ -311,7 +302,7 @@ Content-Type: text/plain
 | `400` | Bad request — `mac` field missing or body not valid JSON |
 | `401` | Unauthorized — `Authorization` header missing or wrong token |
 
-### 2.3 Server Command Bitmask
+### 5.3 Server Command Bitmask
 
 The integer is interpreted as a bitmask. The robot stores the raw value in `server_command` and derives the two boolean flags:
 
@@ -330,7 +321,7 @@ The integer is interpreted as a bitmask. The robot stores the raw value in `serv
 
 > Note: value `2` (running but not ready) is not produced by the reference server implementation but is not rejected by the firmware.
 
-### 2.4 Error Handling
+### 5.4 Error Handling
 
 If the POST fails for any reason (network error, timeout, non-200 status), the robot:
 - sets `server_online = False`
@@ -339,11 +330,11 @@ If the POST fails for any reason (network error, timeout, non-200 status), the r
 
 ---
 
-## 3. Competition Server API (Server-side endpoints)
+## 6. Competition Server API
 
 The Flask server (`Server/app.py`) exposes the following HTTP endpoints.
 
-### 3.1 Robot Status Receiver
+### 6.1 Robot Status Receiver
 
 ```
 POST /picobot/status
@@ -359,7 +350,7 @@ Returns the competition command integer derived from the current competition sta
 | Competition created, not started | `1` (`competition_ready`) |
 | Competition started, not ended | `3` (`competition_ready` + `competition_running`) |
 
-### 3.2 Dashboard
+### 6.2 Dashboard
 
 ```
 GET /
@@ -367,7 +358,7 @@ GET /
 
 Displays a live table of all robots that have ever reported in, with their latest servo positions, uptime, IP address, and current command state.
 
-### 3.3 Robot Detail
+### 6.3 Robot Detail
 
 ```
 GET /robot/<mac>
@@ -375,7 +366,7 @@ GET /robot/<mac>
 
 Shows the full request history for a single robot identified by its MAC address.
 
-### 3.4 Competition Management
+### 6.4 Competition Management
 
 | Method | Path | Action |
 |--------|------|--------|
@@ -386,11 +377,11 @@ Shows the full request history for a single robot identified by its MAC address.
 
 ---
 
-## 4. Authentication
+## 7. Authentication
 
 Both sides support an optional shared secret configured independently.
 
-### Robot side (`picobot_config.py`)
+### 7.1 Robot Side (`picobot_config.py`)
 
 ```python
 REPORT_AUTH = 'mysecret'   # or None to disable
@@ -401,7 +392,7 @@ When set, the robot adds to every POST request:
 Authorization: Bearer mysecret
 ```
 
-### Server side (`Server/config.py`)
+### 7.2 Server Side (`Server/config.py`)
 
 ```python
 REPORT_AUTH = 'mysecret'   # or None to accept all requests
@@ -411,9 +402,9 @@ When set, the server rejects any POST to `/picobot/status` that does not carry t
 
 ---
 
-## 5. Sequence Diagrams
+## 8. Sequence Diagrams
 
-### 5.1 Normal competition flow
+### 8.1 Competition Flow
 
 ```
 Robot                         Competition Server
@@ -443,7 +434,7 @@ Robot                         Competition Server
   |  200 OK  body: "0"               |  both flags False
 ```
 
-### 5.2 Browser control tap
+### 8.2 Browser Control Tap
 
 ```
 Browser (phone)               Robot (port 80)
@@ -458,7 +449,7 @@ Browser (phone)               Robot (port 80)
 ```
 
 
-# Conclusion
+## 9. Conclusion
 
 The PicoBot communication protocol provides a lightweight and practical solution for controlling educational mobile robots and managing robotics competitions over standard IP networks. By combining a simple HTTP-based browser interface with secure HTTPS communication between the robot and a centralized competition server, the protocol enables local robot control, authenticated status reporting, synchronized competition management, and centralized timing while maintaining low implementation complexity.
 
