@@ -1,3 +1,5 @@
+import os
+
 # Server configuration
 
 # Host and port
@@ -5,7 +7,7 @@ HOST = '0.0.0.0'
 PORT = 5000
 
 # Path to the SQLite database file
-DATABASE = 'picobot.db'
+DATABASE = os.environ.get('DATABASE', 'picobot.db')
 
 # Endpoint path that robots POST their status to
 STATUS_ENDPOINT = '/picobot/status'

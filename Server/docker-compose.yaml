@@ -1,0 +1,13 @@
+services:
+  server:
+    build: .
+    ports:
+      - "${SERVER_PORT:-5000}:5000"
+    volumes:
+      - db-data:/app/data
+    environment:
+      - DATABASE=/app/data/picobot.db
+      - REPORT_AUTH=${REPORT_AUTH:-}
+
+volumes:
+  db-data:

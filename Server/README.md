@@ -19,6 +19,7 @@ fleet of robots.
 9. [REST API](#rest-api)
 10. [Database Schema](#database-schema)
 11. [Server Command Bit Flags](#server-command-bit-flags)
+12. [Docker Deployment](#docker-deployment)
 
 ---
 
@@ -199,6 +200,53 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl enable --now picobot-server
+```
+
+---
+
+## Docker Deployment
+
+A `Dockerfile` and `docker-compose.yaml` are provided for containerised deployment.
+
+### Quick start
+
+```bash
+docker compose up -d
+```
+
+The server starts on port **5000** by default (configurable via `SERVER_PORT`).
+
+### Configuration via environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVER_PORT` | `5000` | Host port mapped to the container's port 5000 |
+| `DATABASE` | `/app/data/picobot.db` | Path inside the container; the `db-data` volume keeps it persistent across restarts |
+| `REPORT_AUTH` | *(empty)* | Bearer token for robot POST requests (set on both robot and server) |
+
+Example with a custom auth token and alternate port:
+
+```bash
+export REPORT_AUTH='secret-token-123'
+export SERVER_PORT=8080
+docker compose up -d
+```
+
+### Dockerfile
+
+The image is built from `python:3.12-slim`, installs dependencies from
+`requirements.txt`, and copies the application code. It exposes port 5000 and
+runs `python app.py` as the default command.
+
+### Volume persistence
+
+The `db-data` named volume in `docker-compose.yaml` mounts to `/app/data` inside
+the container. With `DATABASE=/app/data/picobot.db`, the SQLite database
+survives container rebuilds and restarts.
+
+```bash
+# Recreate the image without losing data
+docker compose up -d --build
 ```
 
 ---
