@@ -78,11 +78,12 @@ def init_db():
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS competitions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            name       TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            started_at TEXT,
-            ended_at   TEXT
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            name          TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            started_at    TEXT,
+            ended_at      TEXT,
+            bearer_token  TEXT
         )
     """)
     db.commit()
@@ -92,9 +93,14 @@ def init_db():
 def migrate_db():
     """Apply incremental schema migrations to an existing database."""
     db = sqlite3.connect(app.config['DATABASE'])
+    # robots table migrations
     existing = {row[1] for row in db.execute("PRAGMA table_info(robots)")}
     if 'ip' not in existing:
         db.execute("ALTER TABLE robots ADD COLUMN ip TEXT")
+    # competitions table migrations
+    comp_cols = {row[1] for row in db.execute("PRAGMA table_info(competitions)")}
+    if 'bearer_token' not in comp_cols:
+        db.execute("ALTER TABLE competitions ADD COLUMN bearer_token TEXT")
     db.commit()
     db.close()
 
@@ -130,10 +136,18 @@ def get_competition_command(db):
 # ---------------------------------------------------------------------------
 
 def require_auth(f):
-    """Decorator: verify Bearer token when REPORT_AUTH is configured."""
+    """Decorator: verify Bearer token — competition token overrides global."""
     @wraps(f)
     def decorated(*args, **kwargs):
         expected = app.config.get('REPORT_AUTH')
+        # An active competition's bearer_token takes priority when set
+        try:
+            db = get_db()
+            comp = get_active_competition(db)
+            if comp and comp['bearer_token']:
+                expected = comp['bearer_token']
+        except Exception:
+            pass
         if expected is not None:
             auth_header = request.headers.get('Authorization', '')
             if auth_header != f'Bearer {expected}':
@@ -265,7 +279,11 @@ def competition_create():
         return redirect(url_for('competition_view'))
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
-    db.execute('INSERT INTO competitions (name, created_at) VALUES (?, ?)', (name, now))
+    token = request.form.get('bearer_token', '').strip() or None
+    db.execute(
+        'INSERT INTO competitions (name, created_at, bearer_token) VALUES (?, ?, ?)',
+        (name, now, token),
+    )
     db.commit()
     return redirect(url_for('competition_view'))
 
@@ -289,6 +307,18 @@ def competition_stop(comp_id):
     db.execute(
         'UPDATE competitions SET ended_at = ? WHERE id = ? AND started_at IS NOT NULL AND ended_at IS NULL',
         (now, comp_id),
+    )
+    db.commit()
+    return redirect(url_for('competition_view'))
+
+
+@app.route('/competition/<int:comp_id>/token', methods=['POST'])
+def competition_token(comp_id):
+    db = get_db()
+    token = request.form.get('bearer_token', '').strip() or None
+    db.execute(
+        'UPDATE competitions SET bearer_token = ? WHERE id = ?',
+        (token, comp_id),
     )
     db.commit()
     return redirect(url_for('competition_view'))
@@ -531,6 +561,16 @@ COMPETITION_HTML = (
           Competition is set up. Robots are receiving
           <code>competition_ready = True</code>.
         </p>
+        <form method="post" action="/competition/{{ active.id }}/token" class="mb-3">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Token</span>
+            <input type="text" class="form-control" name="bearer_token"
+                   value="{{ active.bearer_token or '' }}"
+                   placeholder="Global config token">
+            <button class="btn btn-outline-secondary" type="submit">Save</button>
+          </div>
+          {% if active.bearer_token %}<small class="text-muted mt-1">Overrides global REPORT_AUTH</small>{% endif %}
+        </form>
         <div class="d-flex gap-2">
           <form method="post" action="/competition/{{ active.id }}/start">
             <button class="btn btn-success" type="submit">▶ Start Competition</button>
@@ -556,6 +596,16 @@ COMPETITION_HTML = (
           Robots are receiving <code>competition_ready = True</code>
           and <code>competition_running = True</code>.
         </p>
+        <form method="post" action="/competition/{{ active.id }}/token" class="mb-3">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Token</span>
+            <input type="text" class="form-control" name="bearer_token"
+                   value="{{ active.bearer_token or '' }}"
+                   placeholder="Global config token">
+            <button class="btn btn-outline-secondary" type="submit">Save</button>
+          </div>
+          {% if active.bearer_token %}<small class="text-muted mt-1">Overrides global REPORT_AUTH</small>{% endif %}
+        </form>
         <form method="post" action="/competition/{{ active.id }}/stop"
               onsubmit="return confirm('Stop the competition?')">
           <button class="btn btn-danger" type="submit">⏹ Stop Competition</button>
@@ -590,11 +640,15 @@ COMPETITION_HTML = (
         <code>competition_ready = True</code>.
       </p>
       <form method="post" action="/competition/create">
-        <div class="input-group">
-          <input type="text" class="form-control" name="name"
+        <div class="mb-2">
+          <input type="text" class="form-control form-control-sm" name="name"
                  placeholder="Competition name…" required autofocus>
-          <button class="btn btn-primary" type="submit">Create</button>
         </div>
+        <div class="mb-3">
+          <input type="text" class="form-control form-control-sm" name="bearer_token"
+                 placeholder="Bearer token (optional)">
+        </div>
+        <button class="btn btn-primary" type="submit">Create</button>
       </form>
     </div>
   </div>
