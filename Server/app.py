@@ -181,8 +181,8 @@ def receive_status():
     db.execute(
         """INSERT INTO robots
                (mac, first_seen, last_seen, request_count,
-                ip, servo_base, servo_arm, servo_claw, uptime_ms, command)
-               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                ip, servo_base, servo_arm, servo_claw, uptime_ms)
+               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
            ON CONFLICT(mac) DO UPDATE SET
                last_seen     = excluded.last_seen,
                request_count = request_count + 1,
@@ -191,11 +191,14 @@ def receive_status():
                servo_arm     = excluded.servo_arm,
                servo_claw    = excluded.servo_claw,
                uptime_ms     = excluded.uptime_ms""",
-        (mac, now, now, ip, servo_base, servo_arm, servo_claw, uptime_ms,
-         app.config['DEFAULT_COMMAND']),
-    )
+        (mac, now, now, ip, servo_base, servo_arm, servo_claw, uptime_ms))
 
-    command = get_competition_command(db)
+    # Per-robot command override (set via dashboard)
+    robot = db.execute('SELECT command FROM robots WHERE mac = ?', (mac,)).fetchone()
+    if robot and robot['command']:
+        command = robot['command']
+    else:
+        command = get_competition_command(db)
 
     # Record individual request in history
     db.execute(
@@ -383,12 +386,21 @@ DASHBOARD_HTML = (
             <th>Base</th><th>Arm</th><th>Claw</th>
             <th>Uptime (ms)</th>
             <th>State</th>
+            <th>Force Cmd</th>
+            <th><a href="/dashboard/clear_commands" class="text-danger" onclick="return confirm('Clear all per-robot command overrides?')">Clear all</a></th>
           </tr>
         </thead>
         <tbody>
         {% for r in robots %}
           {% set cmd = r.command %}
           <tr>
+            <td>
+              <form method="post" action="/robot/{{ r.mac }}/command" class="d-flex gap-1 align-items-center">
+                <input type="number" name="command" class="form-control form-control-sm" style="width:64px"
+                       value="{{ cmd }}" min="0" max="255" placeholder="0">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">✓</button>
+              </form>
+            </td>
             <td><a href="/robot/{{ r.mac }}"><code>{{ r.mac }}</code></a>{% if r.ip %}<br><small class="text-muted">{{ r.ip }}</small>{% endif %}</td>
             <td class="text-nowrap">{{ r.first_seen[:19].replace('T',' ') }}</td>
             <td class="text-nowrap">{{ r.last_seen[:19].replace('T',' ') }}</td>
